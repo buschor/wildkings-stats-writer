@@ -1,5 +1,7 @@
 import SwiftUI
 
+// MARK: - Models
+
 struct Player: Identifiable, Codable {
     var id = UUID()
     var name: String
@@ -10,175 +12,370 @@ struct Player: Identifiable, Codable {
 }
 
 struct GameSession: Codable {
+    var location: String
+    var date: Date
     var sessionHands: Int
     var players: [Player]
 }
 
+// MARK: - Root Tabs
+
 struct ContentView: View {
-    
-    @State private var players: [Player] = []
-    @State private var newPlayerName: String = ""
-    @State private var sessionHands: Int = 0
-    @State private var isUploading = false
-    @State private var uploadMessage: String?
-    
     var body: some View {
+        TabView {
+            SessionView()
+                .tabItem {
+                    Label("Session", systemImage: "suit.club.fill")
+                }
+
+            SettingsView()
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape")
+                }
+        }
+    }
+}
+
+// MARK: - Session View
+
+struct SessionView: View {
+
+    @State private var players: [Player] = []
+    @State private var showAddDialog = false
+    @State private var newPlayerName = ""
+
+    @State private var location = ""
+    @State private var date = Date()
+    @State private var sessionHands = 0
+
+    @State private var showClearAlert = false
+    @State private var isUploading = false
+
+    @State private var showUploadConfirm = false
+    @State private var playerToDelete: Int? = nil
+    
+    @AppStorage("apiURL") private var apiURL: String = ""
+    @AppStorage("apiToken") private var apiToken: String = ""
+
+    var totalSaldo: Double {
+        players.reduce(0) { $0 + $1.saldo }
+    }
+
+    var body: some View {
+
         NavigationView {
-            VStack {
-                
-                // Session Hände
-                VStack(alignment: .leading) {
-                    Text("Session gespielte Hände")
-                        .font(.headline)
-                    
-                    Stepper(value: $sessionHands, in: 0...10000) {
+            VStack(spacing: 12) {
+
+                // Session Header Compact
+                VStack(spacing: 8) {
+
+                    HStack {
+                        TextField("Location", text: $location)
+                            .textFieldStyle(.roundedBorder)
+
+                        DatePicker("", selection: $date, displayedComponents: .date)
+                            .labelsHidden()
+                    }
+
+                    HStack {
+                        Text("Played Hands")
+                            .font(.subheadline)
+
+                        Spacer()
+
+                        Button("-") {
+                            if sessionHands > 0 { sessionHands -= 1 }
+                        }
+
                         Text("\(sessionHands)")
-                            .font(.title2)
+                            .frame(width: 50)
+
+                        Button("+") {
+                            sessionHands += 1
+                        }
                     }
                 }
-                .padding()
-                
+                .padding(.horizontal)
+
                 Divider()
-                
-                // Spieler hinzufügen
-                HStack {
-                    TextField("Spielername", text: $newPlayerName)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                    
-                    Button("Hinzufügen") {
-                        guard !newPlayerName.isEmpty else { return }
-                        players.append(Player(name: newPlayerName))
-                        newPlayerName = ""
+
+                // Player List
+                VStack(spacing: 6) {
+
+                    // Header Row
+                    HStack(spacing: 8) {
+                        Text("Player")
+                            .frame(width: 80, alignment: .leading)
+
+                        Text("Won")
+                            .frame(width: 70)
+
+                        Text("Buy Ins")
+                            .frame(width: 45)
+
+                        Text("Hands")
+                            .frame(width: 45)
+
+                        Text("Saldo")
+                            .frame(width: 65)
+
+                        Spacer()
+                            .frame(width: 24)
+                    }
+                    .font(.caption)
+                    .foregroundColor(.gray)
+
+                    ForEach(players.indices, id: \.self) { index in
+                        PlayerRow(
+                            player: $players[index],
+                            onDelete: {
+                                playerToDelete = index
+                            }
+                        )
                     }
                 }
-                .padding()
+                .padding(.horizontal)
                 
-                Divider()
-                
-                // Spielerliste
-                ScrollView {
-                    ForEach($players) { $player in
-                        PlayerRow(player: $player)
-                            .padding(.horizontal)
-                            .padding(.vertical, 6)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(10)
-                            .padding(.horizontal)
-                    }
+                // Footer Total
+                HStack(spacing: 8) {
+
+                    Text("Total")
+                        .frame(width: 80, alignment: .leading)
+
+                    Spacer()
+
+                    Text(totalSaldo.formatted(.number.precision(.fractionLength(2))))
+                        .frame(width: 65, alignment: .trailing)
+                        .foregroundColor(totalSaldo == 0 ? .primary : .red)
+
+                    Spacer()
+                        .frame(width: 24)
                 }
-                
+                .font(.headline)
+                .padding(.vertical, 6)
+                .padding(.horizontal)
+
                 Spacer()
-                
-                // Upload Button
-                Button(action: uploadGame) {
-                    if isUploading {
-                        ProgressView()
-                    } else {
-                        Text("Upload")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding()
+
+                // Buttons
+                HStack {
+                    Button("Clear") {
+                        showClearAlert = true
                     }
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color(.systemGray5))
+                    .cornerRadius(10)
+
+                    Button {
+                        showUploadConfirm = true
+                    } label: {
+                        if isUploading {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                        } else {
+                            Text("Upload")
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                        }
+                    }
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
                 }
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(12)
                 .padding()
             }
-            .navigationTitle("Wild Kings Session")
+            .navigationTitle("Poker Session")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Add Player") {
+                        showAddDialog = true
+                    }
+                }
+            }
+        }
+        .alert("Clear all data?", isPresented: $showClearAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                clearAll()
+            }
+        }
+        // Confirm Player Delete
+        .alert("Delete Player?", isPresented: Binding(
+            get: { playerToDelete != nil },
+            set: { if !$0 { playerToDelete = nil } }
+        )) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                if let index = playerToDelete {
+                    players.remove(at: index)
+                }
+                playerToDelete = nil
+            }
+        }
+        // Confirm Upload
+        .alert("Upload session to server?", isPresented: $showUploadConfirm) {
+            Button("Cancel", role: .cancel) {}
+            Button("Upload") {
+                uploadGame()
+            }
+        }
+        .alert("New Player", isPresented: $showAddDialog) {
+            TextField("Name", text: $newPlayerName)
+            Button("Cancel", role: .cancel) {}
+            Button("Add") {
+                if !newPlayerName.isEmpty {
+                    players.append(Player(name: newPlayerName))
+                    newPlayerName = ""
+                }
+            }
         }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = true
         }
     }
-    
+
+    func clearAll() {
+        players.removeAll()
+        location = ""
+        sessionHands = 0
+    }
+
     func uploadGame() {
-        let session = GameSession(sessionHands: sessionHands, players: players)
-        
-        guard let url = URL(string: "https://DEINE-API-URL/poker") else { return }
-        
+
+        guard !apiURL.isEmpty else { return }
+
+        let session = GameSession(
+            location: location,
+            date: date,
+            sessionHands: sessionHands,
+            players: players
+        )
+
+        guard let url = URL(string: apiURL) else { return }
+
         isUploading = true
-        
+
         Task {
             do {
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.httpBody = try JSONEncoder().encode(session)
-                
+
+                if !apiToken.isEmpty {
+                    request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+                }
+
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+
+                request.httpBody = try encoder.encode(session)
+
                 let (_, response) = try await URLSession.shared.data(for: request)
-                
+
                 guard let httpResponse = response as? HTTPURLResponse,
                       httpResponse.statusCode == 200 else {
                     throw URLError(.badServerResponse)
                 }
-                
-                uploadMessage = "Erfolgreich hochgeladen"
-                
+
+                clearAll()
+
             } catch {
-                uploadMessage = "Fehler beim Upload"
+                print("Upload error:", error)
             }
-            
+
             isUploading = false
         }
     }
 }
 
+// MARK: - Player Row Compact
+
 struct PlayerRow: View {
-    
+
     @Binding var player: Player
-    
+    var onDelete: () -> Void
+
     var body: some View {
-        VStack(alignment: .leading) {
-            
+
+        HStack(spacing: 8) {
+
+            // Name
             Text(player.name)
-                .font(.headline)
-            
-            HStack {
-                CounterView(title: "Gewonnene Hände", value: $player.wonHands)
-                CounterView(title: "Buy-Ins", value: $player.buyIns)
-            }
-            
-            HStack {
-                CounterView(title: "Gespielte Hände", value: $player.playedHands)
-                
-                VStack(alignment: .leading) {
-                    Text("Saldo")
-                    TextField("0.0", value: $player.saldo, format: .number)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .keyboardType(.decimalPad)
+                .frame(width: 80, alignment: .leading)
+
+            // Won Hands (+/-)
+            HStack(spacing: 4) {
+                Button("-") {
+                    if player.wonHands > 0 { player.wonHands -= 1 }
                 }
+                .frame(width: 22)
+
+                Text("\(player.wonHands)")
+                    .frame(width: 26)
+
+                Button("+") {
+                    player.wonHands += 1
+                }
+                .frame(width: 22)
             }
+            .frame(width: 70)
+
+            // Buy Ins (kleiner)
+            TextField("", value: $player.buyIns, format: .number)
+                .keyboardType(.numberPad)
+                .frame(width: 45)
+                .textFieldStyle(.roundedBorder)
+
+            // Hands (kleiner)
+            TextField("", value: $player.playedHands, format: .number)
+                .keyboardType(.numberPad)
+                .frame(width: 45)
+                .textFieldStyle(.roundedBorder)
+
+            // Saldo
+            TextField("", value: $player.saldo, format: .number)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 65)
+                .textFieldStyle(.roundedBorder)
+
+            // Delete
+            Button(action: onDelete) {
+                Image(systemName: "trash")
+                    .foregroundColor(.red)
+            }
+            .frame(width: 24)
         }
-        .padding()
+        .padding(6)
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
     }
 }
 
-struct CounterView: View {
-    
-    var title: String
-    @Binding var value: Int
-    
+// MARK: - Settings
+
+struct SettingsView: View {
+
+    @AppStorage("apiURL") private var apiURL: String = ""
+    @AppStorage("apiToken") private var apiToken: String = ""
+
     var body: some View {
-        VStack {
-            Text(title)
-                .font(.caption)
-            
-            HStack {
-                Button("-") {
-                    if value > 0 { value -= 1 }
+        NavigationView {
+            Form {
+                Section(header: Text("API")) {
+                    TextField("Upload URL", text: $apiURL)
+                        .keyboardType(.URL)
+                        .autocapitalization(.none)
+
+                    SecureField("Bearer Token", text: $apiToken)
+                        .autocapitalization(.none)
                 }
-                .frame(width: 30)
-                
-                Text("\(value)")
-                    .frame(width: 40)
-                
-                Button("+") {
-                    value += 1
-                }
-                .frame(width: 30)
             }
+            .navigationTitle("Settings")
         }
-        .padding(4)
     }
 }
