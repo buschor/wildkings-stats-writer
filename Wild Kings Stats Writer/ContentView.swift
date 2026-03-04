@@ -4,7 +4,10 @@ import SwiftUI
 
 struct Player: Identifiable, Codable {
     var id = UUID()
+    var apiId: Int
     var name: String
+    var status: Int
+
     var wonHands: Int = 0
     var buyIns: Int = 0
     var saldo: Double = 0.0
@@ -16,6 +19,12 @@ struct GameSession: Codable {
     var date: Date
     var sessionHands: Int
     var players: [Player]
+}
+
+struct AvailablePlayer: Identifiable, Codable, Hashable {
+    var id: Int
+    var name: String
+    var status: Int
 }
 
 // MARK: - Root Tabs
@@ -47,6 +56,10 @@ struct SessionView: View {
     @State private var location = ""
     @State private var date = Date()
     @State private var sessionHands = 0
+
+    @State private var availablePlayers: [AvailablePlayer] = []
+    @State private var selectedPlayer: AvailablePlayer?
+    @State private var isLoadingPlayers = false
 
     @State private var showClearAlert = false
     @State private var isUploading = false
@@ -223,18 +236,62 @@ struct SessionView: View {
                 uploadGame()
             }
         }
-        .alert("New Player", isPresented: $showAddDialog) {
-            TextField("Name", text: $newPlayerName)
-            Button("Cancel", role: .cancel) {}
-            Button("Add") {
-                if !newPlayerName.isEmpty {
-                    players.append(Player(name: newPlayerName))
-                    newPlayerName = ""
+        .sheet(isPresented: $showAddDialog) {
+            NavigationView {
+                VStack {
+
+                    if isLoadingPlayers {
+                        ProgressView("Loading players...")
+                            .padding()
+                    } else {
+                        Picker("Select Player", selection: $selectedPlayer) {
+                            ForEach(availablePlayers, id: \.self) { player in
+                                Text(player.name)
+                                    .font(player.status > 1 ? .headline : .body)
+                                    .tag(Optional(player))
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .padding()
+                    }
+
+                    Spacer()
+                }
+                .navigationTitle("Add Player")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            showAddDialog = false
+                        }
+                    }
+
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Add") {
+                            if let selected = selectedPlayer {
+
+                                // Optional: Doppeltes Hinzufügen verhindern
+                                if !players.contains(where: { $0.apiId == selected.id }) {
+                                    players.append(
+                                        Player(
+                                            apiId: selected.id,
+                                            name: selected.name,
+                                            status: selected.status
+                                        )
+                                    )
+                                }
+
+                                selectedPlayer = nil
+                                showAddDialog = false
+                            }
+                        }
+                        .disabled(selectedPlayer == nil)
+                    }
                 }
             }
         }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = true
+            loadPlayers()
         }
     }
 
@@ -288,6 +345,44 @@ struct SessionView: View {
             }
 
             isUploading = false
+        }
+    }
+
+    func loadPlayers() {
+        guard !apiURL.isEmpty else { return }
+        guard let url = URL(string: apiURL + "/players.php") else { return }
+
+        isLoadingPlayers = true
+
+        Task {
+            do {
+                var request = URLRequest(url: url)
+                request.httpMethod = "GET"
+
+                if !apiToken.isEmpty {
+                    request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+                }
+
+                let (data, response) = try await URLSession.shared.data(for: request)
+
+                guard let httpResponse = response as? HTTPURLResponse,
+                      httpResponse.statusCode == 200 else {
+                    throw URLError(.badServerResponse)
+                }
+
+                let decoded = try JSONDecoder().decode([AvailablePlayer].self, from: data)
+
+                await MainActor.run {
+                    availablePlayers = decoded   // ← keine Sortierung mehr
+                    isLoadingPlayers = false
+                }
+
+            } catch {
+                print("Error loading players:", error)
+                await MainActor.run {
+                    isLoadingPlayers = false
+                }
+            }
         }
     }
 }
