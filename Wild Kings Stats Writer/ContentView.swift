@@ -70,6 +70,7 @@ struct SessionView: View {
     @AppStorage("apiURL") private var apiURL: String = ""
     @AppStorage("apiToken") private var apiToken: String = ""
     @AppStorage("autoIncrementHands") private var autoIncrementHands: Bool = false
+    @AppStorage("keepScreenAwake") private var keepScreenAwake: Bool = false
 
     var totalSaldo: Double {
         players.reduce(0) { $0 + $1.saldo }
@@ -292,7 +293,7 @@ struct SessionView: View {
             }
         }
         .onAppear {
-            UIApplication.shared.isIdleTimerDisabled = true
+            UIApplication.shared.isIdleTimerDisabled = keepScreenAwake
             loadPlayers()
         }
     }
@@ -465,6 +466,7 @@ struct SettingsView: View {
     @AppStorage("apiURL") private var apiURL: String = ""
     @AppStorage("apiToken") private var apiToken: String = ""
     @AppStorage("autoIncrementHands") private var autoIncrementHands: Bool = false
+    @AppStorage("keepScreenAwake") private var keepScreenAwake: Bool = false
 
     var body: some View {
         NavigationView {
@@ -479,7 +481,7 @@ struct SettingsView: View {
                 }
                 Section(header: Text("Behaviour")) {
 
-                    //Toggle("Keep Screen Awake", isOn: $keepScreenAwake)
+                    Toggle("Keep Screen Awake", isOn: $keepScreenAwake)
 
                     Toggle("Auto increment played hands", isOn: $autoIncrementHands)
                 }
