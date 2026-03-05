@@ -69,6 +69,7 @@ struct SessionView: View {
     
     @AppStorage("apiURL") private var apiURL: String = ""
     @AppStorage("apiToken") private var apiToken: String = ""
+    @AppStorage("autoIncrementHands") private var autoIncrementHands: Bool = false
 
     var totalSaldo: Double {
         players.reduce(0) { $0 + $1.saldo }
@@ -141,6 +142,7 @@ struct SessionView: View {
                     ForEach(players.indices, id: \.self) { index in
                         PlayerRow(
                             player: $players[index],
+                            sessionHands: $sessionHands,
                             onDelete: {
                                 playerToDelete = index
                             }
@@ -392,6 +394,8 @@ struct SessionView: View {
 struct PlayerRow: View {
 
     @Binding var player: Player
+    @Binding var sessionHands: Int
+    @AppStorage("autoIncrementHands") private var autoIncrementHands: Bool = false
     var onDelete: () -> Void
 
     var body: some View {
@@ -414,6 +418,9 @@ struct PlayerRow: View {
 
                 Button("+") {
                     player.wonHands += 1
+                    if autoIncrementHands {
+                        sessionHands += 1
+                    }
                 }
                 .frame(width: 22)
             }
@@ -457,6 +464,7 @@ struct SettingsView: View {
 
     @AppStorage("apiURL") private var apiURL: String = ""
     @AppStorage("apiToken") private var apiToken: String = ""
+    @AppStorage("autoIncrementHands") private var autoIncrementHands: Bool = false
 
     var body: some View {
         NavigationView {
@@ -468,6 +476,12 @@ struct SettingsView: View {
 
                     SecureField("Bearer Token", text: $apiToken)
                         .autocapitalization(.none)
+                }
+                Section(header: Text("Behaviour")) {
+
+                    //Toggle("Keep Screen Awake", isOn: $keepScreenAwake)
+
+                    Toggle("Auto increment played hands", isOn: $autoIncrementHands)
                 }
             }
             .navigationTitle("Settings")
